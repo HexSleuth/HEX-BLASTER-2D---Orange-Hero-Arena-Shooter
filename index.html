@@ -178,6 +178,58 @@
             z-index: 5;
             opacity: 0.9;
         }
+        #player-info-bar {
+            position: absolute;
+            top: 55px;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 5;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 215, 0, 0.4);
+            border-radius: 6px;
+            padding: 3px 10px;
+            font-size: 0.6em;
+            letter-spacing: 1px;
+            color: #fff;
+            text-shadow: 0 0 6px rgba(255, 255, 255, 0.3);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            white-space: nowrap;
+        }
+        #player-info-bar .name-label {
+            color: #aaa;
+            font-size: 0.7em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        #player-info-bar .player-name-val {
+            color: var(--gold);
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+            text-transform: uppercase;
+            max-width: 80px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        #player-info-bar .hero-name-val {
+            color: var(--primary);
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(255, 109, 0, 0.5);
+            text-transform: uppercase;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(255, 109, 0, 0.15);
+            letter-spacing: 2px;
+        }
+        #player-info-bar .separator {
+            color: #555;
+            font-size: 0.8em;
+        }
         #music-indicator {
             position: absolute;
             top: 52px;
@@ -224,7 +276,7 @@
         }
         #combo-indicator {
             position: absolute;
-            top: 62px;
+            top: 82px;
             left: 50%;
             transform: translateX(-50%);
             pointer-events: none;
@@ -771,6 +823,23 @@
                 right: 8px;
                 font-size: 0.45em;
             }
+            #player-info-bar {
+                top: 50px;
+                font-size: 0.5em;
+                padding: 2px 6px;
+                gap: 4px;
+            }
+            #player-info-bar .player-name-val {
+                max-width: 55px;
+            }
+            #weapon-indicator {
+                top: 34px;
+                font-size: 0.5em;
+            }
+            #combo-indicator {
+                top: 72px;
+                font-size: 0.85em;
+            }
             .loading-content {
                 gap: 10px;
                 padding: 14px;
@@ -825,6 +894,11 @@
                 gap: 18px;
                 padding: 24px;
             }
+            #player-info-bar {
+                top: 60px;
+                font-size: 0.65em;
+                padding: 4px 12px;
+            }
         }
     </style>
 </head>
@@ -840,6 +914,13 @@
             </div>
             <div id="health-bar-container"><div id="health-bar-bg"><div id="health-bar"></div></div></div>
             <div id="weapon-indicator"><i class="fa-solid fa-crosshairs"></i> PISTOL</div>
+            <div id="player-info-bar">
+                <span class="name-label">PLAYER:</span>
+                <span class="player-name-val" id="player-name-display">—</span>
+                <span class="separator">|</span>
+                <span class="name-label">HERO:</span>
+                <span class="hero-name-val" id="hero-name-display">ORANGE</span>
+            </div>
             <div id="music-indicator"><i class="fa-solid fa-volume-xmark"></i> OFF</div>
             <div id="music-toggle"><div class="music-btn" id="btn-music"><i class="fa-solid fa-volume-high"></i></div></div>
             <div id="combo-indicator">COMBO x2</div>
@@ -877,7 +958,7 @@
 
         <div id="menu-screen">
             <div class="title"><i class="fa-solid fa-fire"></i> HEX BLASTER 2D <i class="fa-solid fa-fire"></i></div>
-            <div class="subtitle"><i class="fa-solid fa-gamepad"></i> ARENA SHOOTER • CUSTOM HEROES</div>
+            <div class="subtitle"><i class="fa-solid fa-gamepad"></i> ARENA SHOOTER • 7 CUSTOM HEROES</div>
 
             <div class="player-select-section">
                 <div class="section-label"><i class="fa-solid fa-users"></i> SELECT HERO</div>
@@ -1044,6 +1125,7 @@
             heroPurple: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgowXN_phfG4QGYYrM_zN2BpIRAFf46yUp3SKv3_wAaIW9y2KMSsl3V1BywxCyTIOi8o1oCWQxdL3AiXV7k9UKMi4G8SFVn2GvlWaTsyoeCDtfpkFmQ17BEf7uMTAQI2HPu0mzBnsTiPNoK-vQfnDgEcEtMEBkHLBUZSUTRce9dxs80dvbo5oqYkd5fWdCu/s1600/1000220512.png',
             heroGold: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhRpfEh0sh8sBbAzpTS7fMIMVr7hRv8RVvpYR8FQdBauY-ZmwQtE1AsKGFkDLHBHcZDVhtaeFRwxNfCMnmS-QRFLpHIUpp2NQWx0jM3i-9UBjAL_0Q-pszBxp_CE-0uAsUFXnpeQEEOMekOjLd72GFMbvzgv8kK2gtBZbqf23J4rFrV7duUZG7ZfYdoCpTA/s1600/1000220511.png',
             heroRed: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEigqVaEJOE9p95B4rQYvzh6csGV0qXVPuVJkDinYVczr3x8ZhOyZ03zD4Ccl3pRx0u1TTvz8abjsoRYp21t06Ru5J3d2w6fyP5ya1UCNLDLPgmSCepBj6YzvjbGxSH7KkEjrP5LkFgfuz6xtoeybWGbLsPcbVJHttH-s174DIxIsRrMOjxDdEG7iza3gzc_/s1600/1000220510.png',
+            heroCyan: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEicIAliPZ5bRmPkU0QS69IrbzstYQMcq-vgcY9RXYax19gOf2hIfe_H_ups3J9lVBBxAU9aIHAu7Wned-tRp35gt_F5OI9W_U6OB3JF5M_gAXDwb07MP7RKkmydOBN9S0UxQwPxtgxGpzmK73pAC59jT3i9MTUjyc-BnO9F0OzegCiPneS6PXSCNqu3E7hU/s1600/1000220547.png',
             enemy1: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgOIWc_wbHMxxi_ZDbl4334AOzjiJZcyt5xWcTgV6cbLMUbASm1QkZPEcndg90hIvjdv_UUa7kO3plRgR10KK6gBFaS3jQfyyUMfXFl9mP8tafgMPUshfU28yFKKm0Q5jEbffWnME6sMqRWY_Qk5IV845IwToe8-XEb587ZCOu4vbRELDc2RkAO73T7HbWX/s1600/1000220509.png',
             enemy2: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEicIAliPZ5bRmPkU0QS69IrbzstYQMcq-vgcY9RXYax19gOf2hIfe_H_ups3J9lVBBxAU9aIHAu7Wned-tRp35gt_F5OI9W_U6OB3JF5M_gAXDwb07MP7RKkmydOBN9S0UxQwPxtgxGpzmK73pAC59jT3i9MTUjyc-BnO9F0OzegCiPneS6PXSCNqu3E7hU/s1600/1000220547.png',
             enemy3: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgowXN_phfG4QGYYrM_zN2BpIRAFf46yUp3SKv3_wAaIW9y2KMSsl3V1BywxCyTIOi8o1oCWQxdL3AiXV7k9UKMi4G8SFVn2GvlWaTsyoeCDtfpkFmQ17BEf7uMTAQI2HPu0mzBnsTiPNoK-vQfnDgEcEtMEBkHLBUZSUTRce9dxs80dvbo5oqYkd5fWdCu/s1600/1000220512.png',
@@ -1055,6 +1137,7 @@
             music: 'https://raw.githubusercontent.com/HexSleuth/Hero-vs-Enemies/188d90a1344bc2d1357b27e0600b2538b0e53fd2/background_music.mp3'
         };
 
+        // 7 hero presets — all 7 images available as both player and enemy (except selected player)
         const heroPresets = [
             { id: 'orange', name: 'ORANGE', icon: '🔥', primary: '#ff6d00', glow: '#ff6d00', bullet: '#ff6d00',
                 accent: '#ffd700', speed: 2.8, damageMult: 1.0, maxHpBonus: 0, desc: 'BALANCED',
@@ -1072,7 +1155,9 @@
                 imgKey: 'heroGold' },
             { id: 'red', name: 'RED', icon: '💀', primary: '#ff1744', glow: '#ff5252', bullet: '#ff8a80',
                 accent: '#ff6e40', speed: 2.9, damageMult: 1.1, maxHpBonus: 0, desc: 'AGGRESSOR',
-                imgKey: 'heroRed' }
+                imgKey: 'heroRed' },
+            { id: 'cyan', name: 'CYAN', icon: '❄️', primary: '#00bcd4', glow: '#18ffff', bullet: '#84ffff',
+                accent: '#4dd0e1', speed: 2.75, damageMult: 1.0, maxHpBonus: 5, desc: 'SWIFT', imgKey: 'heroCyan' }
         ];
 
         let selectedHeroId = 'orange';
@@ -1265,25 +1350,17 @@
             playSound('powerup');
         }
 
-        // NEW: getEnemyImage that avoids the selected hero's image
+        // KEY FIX: Get enemy image EXCLUDING the selected player hero's image
         function getEnemyImage() {
-            const selectedHero = heroPresets.find(h => h.id === selectedHeroId);
+            const selectedHero = heroPresets.find(h => h.id === lastSelectedHeroId);
             const heroImgKey = selectedHero ? selectedHero.imgKey : 'heroOrange';
             const heroImgSrc = IMAGE_URLS[heroImgKey];
 
-            // Prefer enemy images, but exclude any that match hero image
-            let candidates = enemyImgs.filter(img => img.src !== heroImgSrc);
+            let candidates = enemyImgs.filter(e => e.url !== heroImgSrc);
             if (candidates.length === 0) {
-                // Fallback to hero images excluding selected hero
-                candidates = Object.keys(heroImages)
-                    .filter(key => key !== heroImgKey && key.startsWith('hero'))
-                    .map(key => heroImages[key]);
+                candidates = enemyImgs;
             }
-            if (candidates.length === 0) {
-                // Ultimate fallback: any available image
-                candidates = enemyImgs.length > 0 ? enemyImgs : Object.values(heroImages);
-            }
-            return candidates[Math.floor(Math.random() * candidates.length)] || null;
+            return candidates[Math.floor(Math.random() * candidates.length)]?.img || null;
         }
 
         function spawnEnemy() {
@@ -1452,9 +1529,12 @@
         function gameOver() {
             gameState = 'gameover';
             playSound('gameover');
-            document.getElementById('final-score').textContent = 'SCORE: ' + score.toLocaleString();
+            const displayName = playerName || 'PLAYER';
+            const heroDisplayName = (heroPresets.find(h => h.id === lastSelectedHeroId) || heroPresets[0]).name;
+            document.getElementById('final-score').textContent = displayName + ' • SCORE: ' + score.toLocaleString();
             document.getElementById('final-stats').innerHTML =
-                'WAVES SURVIVED: ' + wave + '<br>ENEMIES DEFEATED: ' + kills + '<br>BEST COMBO: x' + Math.max(
+                'HERO: ' + heroDisplayName + '<br>WAVES SURVIVED: ' + wave + '<br>ENEMIES DEFEATED: ' + kills +
+                '<br>BEST COMBO: x' + Math.max(
                     combo, 1);
             document.getElementById('game-over-screen').classList.remove('hidden');
             if (musicPlaying && bgMusic) {
@@ -1503,6 +1583,11 @@
             document.getElementById('combo-indicator').classList.toggle('active', combo > 1);
             if (combo > 1) document.getElementById('combo-indicator').textContent = 'COMBO x' + combo;
             updateWeaponIndicator();
+
+            const displayName = playerName || 'PLAYER';
+            const heroDisplayName = (heroPresets.find(h => h.id === lastSelectedHeroId) || heroPresets[0]).name;
+            document.getElementById('player-name-display').textContent = displayName;
+            document.getElementById('hero-name-display').textContent = heroDisplayName;
         }
 
         function damagePlayer(amount) {
@@ -1842,7 +1927,11 @@
                 ctx.shadowBlur = 30; } else if (player.shieldTimer > 0) { ctx.shadowColor = glowColor;
                 ctx.shadowBlur = 20; } else { ctx.shadowColor = glowColor;
                 ctx.shadowBlur = 16; }
-            const playerImg = heroImages[lastSelectedHeroId] || heroImages['heroOrange'] || heroImg;
+
+            const selectedHeroPreset = heroPresets.find(h => h.id === lastSelectedHeroId);
+            const playerImgKey = selectedHeroPreset ? selectedHeroPreset.imgKey : 'heroOrange';
+            const playerImg = heroImages[playerImgKey] || heroImages['heroOrange'] || heroImg;
+
             if (playerImg && heroLoaded) {
                 const size = player.radius * 2;
                 if (player.invincibleTimer > 0 && Math.floor(player.invincibleTimer / 4) % 2 === 0) ctx
@@ -1881,6 +1970,23 @@
                 ctx.arc(px, py, player.radius + 6 + Math.sin(time * 0.2) * 3, 0, Math.PI * 2);
                 ctx.stroke();
             }
+
+            // Draw player name above the player character
+            const displayName = playerName || 'PLAYER';
+            ctx.save();
+            ctx.font = 'bold 10px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            const nameY = py - player.radius - 14;
+            const textWidth = ctx.measureText(displayName).width;
+            ctx.fillStyle = 'rgba(0,0,0,0.65)';
+            ctx.fillRect(px - textWidth / 2 - 6, nameY - 9, textWidth + 12, 15);
+            ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(px - textWidth / 2 - 6, nameY - 9, textWidth + 12, 15);
+            ctx.fillStyle = heroColors.accent || '#ffd700';
+            ctx.fillText(displayName, px, nameY);
+            ctx.restore();
 
             const aimAngle = Math.atan2(mouseY - py, mouseX - px);
             ctx.strokeStyle = glowColor + '99';
@@ -2018,10 +2124,16 @@
             const nameInput = document.getElementById('player-name-input');
             nameInput.addEventListener('input', () => {
                 playerName = nameInput.value.trim().toUpperCase();
+                if (gameState === 'menu' || gameState === 'playing' || gameState === 'paused') {
+                    document.getElementById('player-name-display').textContent = playerName || 'PLAYER';
+                }
             });
             nameInput.addEventListener('change', () => {
                 playerName = nameInput.value.trim().toUpperCase();
                 nameInput.value = playerName;
+                if (gameState === 'menu' || gameState === 'playing' || gameState === 'paused') {
+                    document.getElementById('player-name-display').textContent = playerName || 'PLAYER';
+                }
             });
         }
 
@@ -2113,8 +2225,12 @@
             }
 
             const startBtn = document.getElementById('btn-start');
+            let startLock = false;
             const startHandler = (e) => {
-                e.preventDefault();
+                if (e) e.preventDefault();
+                if (startLock) return;
+                startLock = true;
+                setTimeout(() => { startLock = false; }, 300);
                 initAudio();
                 const nameInput = document.getElementById('player-name-input');
                 playerName = nameInput.value.trim().toUpperCase();
@@ -2141,7 +2257,7 @@
                         if (asset.key === 'bg') { bgImg = img;
                             bgLoaded = true; } else if (asset.key.startsWith('hero')) {
                             heroImages[asset.key] = img; } else if (asset.key.startsWith('enemy')) {
-                            enemyImgs.push(img);
+                            enemyImgs.push({ img: img, url: asset.url, key: asset.key });
                             enemyLoaded = true;
                         }
                         updateProgress();
@@ -2154,7 +2270,9 @@
                             }).catch(() => { updateProgress(); });
                         }).then(() => {
                             heroLoaded = Object.keys(heroImages).length > 0;
-                            heroImg = heroImages[lastSelectedHeroId] || heroImages['heroOrange'] || null;
+                            const selectedHeroPreset = heroPresets.find(h => h.id === lastSelectedHeroId);
+                            const heroImgKey = selectedHeroPreset ? selectedHeroPreset.imgKey : 'heroOrange';
+                            heroImg = heroImages[heroImgKey] || heroImages['heroOrange'] || null;
                             assetsLoaded = true;
                             document.getElementById('loading-screen').classList.add('hidden');
                             startGame();
@@ -2205,7 +2323,7 @@
             const howtoHandler = (e) => {
                 if (e) e.preventDefault();
                 alert(
-                    'MOVE: WASD or Arrow Keys or D-pad\nAIM: Mouse or touch canvas\nFIRE: Click or hold fire button\nDASH: Space/Shift or ⚡ button\nSWAP WEAPON: Q or ⇄ button\nPAUSE: P key\nMUSIC: ♪ button or M key\n\nWeapons: Pistol (∞), Shotgun, Machine Gun, Railgun\nCollect power-ups: + Heal, R Rapid Fire, S Shield, A Ammo, D Bonus Score\n\nHEROES: Select different heroes in the menu with unique colors and stats!\nCustomize colors with the color pickers!'
+                    'MOVE: WASD or Arrow Keys or D-pad\nAIM: Mouse or touch canvas\nFIRE: Click or hold fire button\nDASH: Space/Shift or ⚡ button\nSWAP WEAPON: Q or ⇄ button\nPAUSE: P key\nMUSIC: ♪ button or M key\n\nWeapons: Pistol (∞), Shotgun, Machine Gun, Railgun\nCollect power-ups: + Heal, R Rapid Fire, S Shield, A Ammo, D Bonus Score\n\nHEROES: 7 unique heroes! Select one in the menu.\nYour selected hero\'s image will NOT appear as an enemy!\nCustomize colors with the color pickers!\n\nYour player name and selected hero name show in-game!'
                 );
             };
             howtoBtn.addEventListener('click', howtoHandler);
@@ -2225,6 +2343,11 @@
             player.y = canvas.height / 2;
             mouseX = canvas.width / 2;
             mouseY = canvas.height / 2;
+
+            const defaultHero = heroPresets.find(h => h.id === selectedHeroId) || heroPresets[0];
+            document.getElementById('player-name-display').textContent = 'PLAYER';
+            document.getElementById('hero-name-display').textContent = defaultHero.name;
+
             updateHUD();
             updateWeaponIndicator();
 
