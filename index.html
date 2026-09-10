@@ -274,6 +274,12 @@
             transform: scale(0.92);
             box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
         }
+        .music-btn.muted {
+            background: rgba(255, 23, 68, 0.2);
+            border-color: var(--danger);
+            color: var(--danger);
+            box-shadow: 0 0 8px rgba(255, 23, 68, 0.35);
+        }
         #combo-indicator {
             position: absolute;
             top: 82px;
@@ -940,7 +946,7 @@
                 <span class="hero-name-val" id="hero-name-display">ORANGE</span>
             </div>
             <div id="music-indicator"><i class="fa-solid fa-volume-xmark"></i> OFF</div>
-            <div id="music-toggle"><div class="music-btn" id="btn-music"><i class="fa-solid fa-volume-high"></i></div></div>
+            <div id="music-toggle"><div class="music-btn muted" id="btn-music"><i class="fa-solid fa-volume-xmark"></i></div></div>
             <div id="combo-indicator">COMBO x2</div>
             <div id="touch-controls">
                 <div class="touch-group">
@@ -1098,7 +1104,8 @@
             enemyLoaded = false;
         let bgMusic = null,
             musicLoaded = false,
-            musicPlaying = false;
+            musicPlaying = false,
+            musicMuted = false;   // user's mute preference (persists across runs)
         let assetsLoaded = false;
         let heroImages = {};
         let loadingStarted = false;
@@ -1106,17 +1113,24 @@
         let isPlaying = false; // "In game with Play" state flag
 
         // ============================================================
-        //  CUSTOM FIRE SOUND (replaces old oscillator firing sound)
+        //  CUSTOM PLAYER FIRE SOUND (replaces old oscillator firing sound)
         // ============================================================
-        // GitHub raw URL for the new firing sound.
+        // GitHub raw URL for the player firing sound.
         // Original page: .../raw/refs/heads/main/sound.mp3
-        // We use the raw.githubusercontent.com host for direct, CORS-friendly
-        // binary delivery. This decoded AudioBuffer is played polyphonically
-        // on every shot, so rapid-fire weapons overlap cleanly.
         const FIRE_SOUND_URL = 'https://raw.githubusercontent.com/HexSleuth/HEX-BLASTER-2D---Orange-Hero-Arena-Shooter/main/sound.mp3';
         let fireSoundBuffer = null;      // decoded AudioBuffer
         let fireSoundReady = false;      // true once decoded successfully
         let fireSoundFailed = false;     // true if loading failed (use fallback)
+
+        // ============================================================
+        //  CUSTOM ENEMY FIRE SOUND (replaces old enemy shoot blip)
+        // ============================================================
+        // GitHub raw URL for the enemy firing sound (opsSound.mp3).
+        // Original page: .../raw/refs/heads/main/opsSound.mp3
+        const ENEMY_FIRE_SOUND_URL = 'https://raw.githubusercontent.com/HexSleuth/HEX-BLASTER-2D---Orange-Hero-Arena-Shooter/main/opsSound.mp3';
+        let enemyFireSoundBuffer = null;   // decoded AudioBuffer
+        let enemyFireSoundReady = false;   // true once decoded successfully
+        let enemyFireSoundFailed = false;  // true if loading failed (use fallback)
 
         // ============================================================
         //  ASSET CACHE + SELECTED-HERO LOADING SYSTEM
@@ -1166,16 +1180,10 @@
             });
         }
 
-        // Decode the custom fire sound into an AudioBuffer so it can be played
-        // multiple times at once (polyphonic) without cutting itself off.
-        function loadFireSoundAsset(url) {
+        // Generic MP3 -> AudioBuffer loader. Used for both the player fire sound
+        // and the enemy fire sound so they can be played polyphonically.
+        function loadMp3AsAudioBuffer(url, onFailLabel) {
             return new Promise((resolve) => {
-                if (fireSoundBuffer) { fireSoundReady = true; resolve(fireSoundBuffer); return; }
-                if (fireSoundFailed) { resolve(null); return; }
-
-                // We need an AudioContext to decode. initAudio() is called
-                // before loading begins (user gesture from the Play click),
-                // so audioCtx should already exist.
                 const decode = (ctxToUse) => {
                     fetch(url, { mode: 'cors', cache: 'force-cache' })
                         .then(res => {
@@ -1189,14 +1197,9 @@
                                 (err) => rej2(err)
                             );
                         }))
-                        .then(decoded => {
-                            fireSoundBuffer = decoded;
-                            fireSoundReady = true;
-                            resolve(decoded);
-                        })
+                        .then(decoded => resolve(decoded))
                         .catch(err => {
-                            console.warn('Fire sound load/decode failed:', err);
-                            fireSoundFailed = true;
+                            console.warn((onFailLabel || 'MP3') + ' load/decode failed:', err);
                             resolve(null);
                         });
                 };
@@ -1210,17 +1213,30 @@
                     }
                     decode(audioCtx);
                 } catch (e) {
-                    // Last-ditch: create a throwaway context for decoding
                     try {
                         const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
                         decode(tmpCtx);
                     } catch (e2) {
-                        console.warn('No AudioContext available for fire sound:', e2);
-                        fireSoundFailed = true;
+                        console.warn('No AudioContext available for ' + (onFailLabel || 'MP3') + ':', e2);
                         resolve(null);
                     }
                 }
+            });
+        }
 
+        function loadFireSoundAsset(url) {
+            return new Promise((resolve) => {
+                if (fireSoundBuffer) { fireSoundReady = true; resolve(fireSoundBuffer); return; }
+                if (fireSoundFailed) { resolve(null); return; }
+                loadMp3AsAudioBuffer(url, 'Fire sound').then(decoded => {
+                    if (decoded) {
+                        fireSoundBuffer = decoded;
+                        fireSoundReady = true;
+                    } else {
+                        fireSoundFailed = true;
+                    }
+                    resolve(decoded);
+                });
                 // Never hang the loading screen
                 setTimeout(() => {
                     if (!fireSoundReady && !fireSoundFailed) {
@@ -1231,8 +1247,31 @@
             });
         }
 
-        // Play the decoded fire sound. Uses a fresh BufferSource each call so
-        // overlapping shots don't cancel each other. Returns true if played.
+        function loadEnemyFireSoundAsset(url) {
+            return new Promise((resolve) => {
+                if (enemyFireSoundBuffer) { enemyFireSoundReady = true; resolve(enemyFireSoundBuffer); return; }
+                if (enemyFireSoundFailed) { resolve(null); return; }
+                loadMp3AsAudioBuffer(url, 'Enemy fire sound').then(decoded => {
+                    if (decoded) {
+                        enemyFireSoundBuffer = decoded;
+                        enemyFireSoundReady = true;
+                    } else {
+                        enemyFireSoundFailed = true;
+                    }
+                    resolve(decoded);
+                });
+                // Never hang the loading screen
+                setTimeout(() => {
+                    if (!enemyFireSoundReady && !enemyFireSoundFailed) {
+                        enemyFireSoundFailed = true;
+                        resolve(null);
+                    }
+                }, 15000);
+            });
+        }
+
+        // Play the decoded PLAYER fire sound. Uses a fresh BufferSource each
+        // call so overlapping shots don't cancel each other. Returns true if played.
         function playFireSound() {
             if (!fireSoundReady || !fireSoundBuffer || !audioCtx) return false;
             try {
@@ -1266,6 +1305,37 @@
             }
         }
 
+        // Play the decoded ENEMY fire sound. Polyphonic so multiple enemies
+        // firing at once don't cut each other off. Returns true if played.
+        function playEnemyFireSound() {
+            if (!enemyFireSoundReady || !enemyFireSoundBuffer || !audioCtx) return false;
+            try {
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(() => {});
+                }
+                const src = audioCtx.createBufferSource();
+                src.buffer = enemyFireSoundBuffer;
+
+                // Enemies are slightly quieter than the player so the player's
+                // own firing stays the star of the mix.
+                const vol = 0.28;
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+
+                // Slight pitch variation per enemy shot so waves don't sound
+                // like a single robotic loop.
+                src.playbackRate.value = 0.9 + Math.random() * 0.18;
+
+                src.connect(gain);
+                gain.connect(audioCtx.destination);
+                src.start(0);
+                return true;
+            } catch (e) {
+                console.warn('playEnemyFireSound error:', e);
+                return false;
+            }
+        }
+
         // Build the enemy image list = all hero images EXCEPT the selected hero
         function getEnemySources(excludeHeroId) {
             const selected = heroPresets.find(h => h.id === excludeHeroId) || heroPresets[0];
@@ -1282,7 +1352,8 @@
             return list;
         }
 
-        // Load exactly what the run needs: selected hero + arena + enemies + music + fire sound
+        // Load exactly what the run needs: selected hero + arena + enemies +
+        // music + player fire sound + enemy fire sound
         function loadSelectedHeroBundle(heroId, onProgress) {
             const hero = heroPresets.find(h => h.id === heroId) || heroPresets[0];
             const enemySources = getEnemySources(heroId);
@@ -1294,7 +1365,7 @@
                 tasks.push({ key: src.imgKey, url: src.url, label: 'ENEMY ' + src.name });
             });
 
-            const totalSteps = tasks.length + 2; // + music + fire sound
+            const totalSteps = tasks.length + 3; // + music + player fire + enemy fire
             let doneSteps = 0;
 
             const step = (label) => {
@@ -1311,7 +1382,9 @@
                 .then(() => loadMusicAsset(IMAGE_URLS.music))
                 .then(() => step('MUSIC'))
                 .then(() => loadFireSoundAsset(FIRE_SOUND_URL))
-                .then(() => step('SOUND FX'));
+                .then(() => step('PLAYER FX'))
+                .then(() => loadEnemyFireSoundAsset(ENEMY_FIRE_SOUND_URL))
+                .then(() => step('ENEMY FX'));
         }
 
         // After loading, wire the loaded assets into game globals
@@ -1370,7 +1443,7 @@
             loadingStarted = true;
             const startedAt = Date.now();
 
-            // Make sure the AudioContext exists before we try to decode sound.mp3
+            // Make sure the AudioContext exists before we try to decode the mp3s
             initAudio();
 
             loadSelectedHeroBundle(selectedHeroId, (done, total, label) => {
@@ -1412,7 +1485,7 @@
             if (!audioCtx) { try { audioCtx = new(window.AudioContext || window.webkitAudioContext)(); } catch (
                 e) {} }
             if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-            if (bgMusic && !musicPlaying && gameState === 'playing') { tryAutoPlayMusic(); }
+            if (bgMusic && !musicPlaying && !musicMuted && gameState === 'playing') { tryAutoPlayMusic(); }
         }
 
         function playSound(type) {
@@ -1431,11 +1504,11 @@
                 o.stop(now + dur); };
             switch (type) {
                 case 'shoot':
-                    // ── NEW: use the custom sound.mp3 from GitHub ──
+                    // ── Custom sound.mp3 from GitHub (player fire) ──
                     // Falls back to the original synthesized blip ONLY if the
                     // mp3 could not be loaded/decoded, so the game is never silent.
                     if (playFireSound()) {
-                        // custom firing sound played successfully
+                        // custom player firing sound played successfully
                     } else {
                         if (currentWeapon === 'pistol') osc(700, 0.06, 0.15);
                         else if (currentWeapon === 'shotgun') osc(300, 0.1, 0.25);
@@ -1444,7 +1517,14 @@
                     }
                     break;
                 case 'enemy_shoot':
-                    osc(350, 0.08, 0.15);
+                    // ── Custom opsSound.mp3 from GitHub (enemy fire) ──
+                    // Replaces the old synthesized enemy shot. Falls back to
+                    // the old blip ONLY if the mp3 couldn't be loaded/decoded.
+                    if (playEnemyFireSound()) {
+                        // custom enemy firing sound played successfully
+                    } else {
+                        osc(350, 0.08, 0.15);
+                    }
                     break;
                 case 'explosion':
                     osc(200, 0.2, 0.3);
@@ -1480,34 +1560,83 @@
             }
         }
 
-        function tryAutoPlayMusic() {
-            if (bgMusic && !musicPlaying && gameState === 'playing') {
-                bgMusic.play().then(() => {
-                    musicPlaying = true;
-                    document.getElementById('music-indicator').innerHTML =
-                        '<i class="fa-solid fa-volume-high"></i> ON';
-                }).catch(e => {
-                    console.log('Autoplay blocked, waiting for user gesture');
-                    document.getElementById('music-indicator').innerHTML =
-                        '<i class="fa-solid fa-volume-xmark"></i> OFF';
-                });
+        // ============================================================
+        //  MUSIC (with mute toggle)
+        // ============================================================
+        // Updates BOTH the top-right indicator text AND the button icon
+        // to reflect the current mute state.
+        function updateMusicUI() {
+            const indicator = document.getElementById('music-indicator');
+            const btn = document.getElementById('btn-music');
+
+            const isOn = !!bgMusic && musicPlaying && !musicMuted;
+            const iconClass = isOn ? 'fa-volume-high' : 'fa-volume-xmark';
+
+            if (indicator) {
+                indicator.innerHTML = isOn
+                    ? '<i class="fa-solid fa-volume-high"></i> ON'
+                    : '<i class="fa-solid fa-volume-xmark"></i> OFF';
+            }
+            if (btn) {
+                btn.innerHTML = '<i class="fa-solid ' + iconClass + '"></i>';
+                btn.classList.toggle('muted', !isOn);
             }
         }
 
-        function toggleMusic() {
+        // Actually start or stop the audio element based on mute + state.
+        function syncMusicPlayback() {
             if (!bgMusic) return;
-            if (musicPlaying) {
-                bgMusic.pause();
+            if (musicMuted || gameState !== 'playing') {
+                try { bgMusic.pause(); } catch (e) {}
                 musicPlaying = false;
-                document.getElementById('music-indicator').innerHTML =
-                    '<i class="fa-solid fa-volume-xmark"></i> OFF';
-            } else {
-                bgMusic.play().then(() => {
-                    musicPlaying = true;
-                    document.getElementById('music-indicator').innerHTML =
-                        '<i class="fa-solid fa-volume-high"></i> ON';
-                }).catch(e => console.log(e));
+                updateMusicUI();
+                return;
             }
+            bgMusic.play().then(() => {
+                musicPlaying = true;
+                updateMusicUI();
+            }).catch(e => {
+                console.log('Music play blocked:', e);
+                musicPlaying = false;
+                updateMusicUI();
+            });
+        }
+
+        function tryAutoPlayMusic() {
+            if (bgMusic && !musicPlaying && !musicMuted && gameState === 'playing') {
+                syncMusicPlayback();
+            }
+        }
+
+        // Master toggle — called by the music button and the M key.
+        // FLIPS the mute preference and immediately pauses/resumes.
+        function toggleMusic() {
+            // Flip the user's mute preference
+            musicMuted = !musicMuted;
+
+            // Make sure we have an AudioContext so playback can start on
+            // the first gesture (mobile autoplay policies).
+            initAudio();
+
+            if (musicMuted) {
+                // Mute: pause immediately if we have audio
+                if (bgMusic) {
+                    try { bgMusic.pause(); } catch (e) {}
+                }
+                musicPlaying = false;
+            } else {
+                // Unmute: resume if we're in a playable state
+                if (bgMusic) {
+                    if (gameState === 'playing' || gameState === 'paused') {
+                        syncMusicPlayback();
+                    } else {
+                        // In menu / loading / gameover we keep the preference
+                        // and let startGame() pick it up.
+                        musicPlaying = false;
+                    }
+                }
+            }
+            updateMusicUI();
         }
 
         // ============================================================
@@ -1765,7 +1894,7 @@
             player.x -= Math.cos(angle) * cfg.recoil * 2;
             player.y -= Math.sin(angle) * cfg.recoil * 2;
             shakeAmount = Math.min(shakeAmount + cfg.recoil * 0.5, 5);
-            // New custom fire sound (from sound.mp3) plays here
+            // Custom player fire sound (from sound.mp3) plays here
             playSound('shoot');
         }
 
@@ -1784,6 +1913,7 @@
                 life: 120,
                 alive: true
             });
+            // Custom enemy fire sound (from opsSound.mp3) plays here
             playSound('enemy_shoot');
         }
 
@@ -1840,16 +1970,12 @@
             document.getElementById('pause-screen').classList.add('hidden');
             document.getElementById('loading-screen').classList.add('hidden');
             playSound('wave');
-            if (bgMusic && !musicPlaying) {
-                bgMusic.play().then(() => {
-                    musicPlaying = true;
-                    document.getElementById('music-indicator').innerHTML =
-                        '<i class="fa-solid fa-volume-high"></i> ON';
-                }).catch(e => {
-                    console.log('Music autoplay blocked, retrying on user gesture');
-                    document.getElementById('music-indicator').innerHTML =
-                        '<i class="fa-solid fa-volume-xmark"></i> OFF';
-                });
+
+            // Start background music UNLESS the player has muted it.
+            if (bgMusic && !musicPlaying && !musicMuted) {
+                syncMusicPlayback();
+            } else {
+                updateMusicUI();
             }
         }
 
@@ -1865,23 +1991,33 @@
                 '<br>BEST COMBO: x' + Math.max(
                     combo, 1);
             document.getElementById('game-over-screen').classList.remove('hidden');
-            if (musicPlaying && bgMusic) {
-                bgMusic.pause();
+            // Pause music but DO NOT touch musicMuted — the player's mute
+            // preference is preserved and honoured on the next run.
+            if (bgMusic) {
+                try { bgMusic.pause(); } catch (e) {}
                 musicPlaying = false;
-                document.getElementById('music-indicator').innerHTML =
-                    '<i class="fa-solid fa-volume-xmark"></i> OFF';
             }
+            updateMusicUI();
         }
 
         function togglePause() {
             if (gameState === 'playing') {
                 gameState = 'paused';
                 document.getElementById('pause-screen').classList.remove('hidden');
-                if (musicPlaying && bgMusic) bgMusic.pause();
+                if (bgMusic) {
+                    try { bgMusic.pause(); } catch (e) {}
+                    musicPlaying = false;
+                }
+                updateMusicUI();
             } else if (gameState === 'paused') {
                 gameState = 'playing';
                 document.getElementById('pause-screen').classList.add('hidden');
-                if (musicPlaying && bgMusic) bgMusic.play().catch(e => console.log(e));
+                // Only resume if the player hasn't muted the music.
+                if (bgMusic && !musicMuted) {
+                    syncMusicPlayback();
+                } else {
+                    updateMusicUI();
+                }
             }
         }
 
@@ -2489,7 +2625,16 @@
                 if (e.key === ' ' || e.key.startsWith('Arrow')) e.preventDefault();
                 if (e.key.toLowerCase() === 'p') togglePause();
                 if (e.key.toLowerCase() === 'q') swapWeapon();
-                if (e.key.toLowerCase() === 'm') toggleMusic();
+                if (e.key.toLowerCase() === 'm') {
+                    // M key uses the exact same mute toggle as the button
+                    toggleMusic();
+                    // Brief visual feedback on the button
+                    const musicBtn = document.getElementById('btn-music');
+                    if (musicBtn) {
+                        musicBtn.classList.add('pressed');
+                        setTimeout(() => musicBtn.classList.remove('pressed'), 150);
+                    }
+                }
                 initAudio();
             });
             window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
@@ -2559,15 +2704,24 @@
                 swapBtn.addEventListener('mousedown', swapHandler);
             }
 
+            // ---- MUSIC BUTTON: mute / unmute the background music ----
             const musicBtn = document.getElementById('btn-music');
             if (musicBtn) {
-                const musicHandler = (e) => { if (e) e.preventDefault();
+                const musicHandler = (e) => {
+                    if (e) { e.preventDefault(); e.stopPropagation(); }
+                    // Make sure the AudioContext exists so playback can resume
                     initAudio();
+                    // Flip mute and pause/resume the background music
                     toggleMusic();
+                    // Tactile feedback
                     musicBtn.classList.add('pressed');
-                    setTimeout(() => musicBtn.classList.remove('pressed'), 150); };
+                    setTimeout(() => musicBtn.classList.remove('pressed'), 150);
+                };
                 musicBtn.addEventListener('touchstart', musicHandler, { passive: false });
+                musicBtn.addEventListener('touchend', (e) => { e.preventDefault(); }, { passive: false });
                 musicBtn.addEventListener('mousedown', musicHandler);
+                musicBtn.addEventListener('mouseup', (e) => { if (e) e.preventDefault(); });
+                musicBtn.addEventListener('click', (e) => { if (e) e.preventDefault(); });
             }
 
             // ---------- START GAME (Selected Hero Loading -> Play) ----------
@@ -2614,6 +2768,8 @@
             const menuHandler = (e) => { if (e) e.preventDefault();
                 gameState = 'menu';
                 isPlaying = false;
+                if (bgMusic) { try { bgMusic.pause(); } catch (err) {} musicPlaying = false; }
+                updateMusicUI();
                 document.getElementById('game-over-screen').classList.add('hidden');
                 document.getElementById('menu-screen').classList.remove('hidden'); };
             menuBtn.addEventListener('click', menuHandler);
@@ -2631,6 +2787,8 @@
             const quitHandler = (e) => { if (e) e.preventDefault();
                 gameState = 'menu';
                 isPlaying = false;
+                if (bgMusic) { try { bgMusic.pause(); } catch (err) {} musicPlaying = false; }
+                updateMusicUI();
                 document.getElementById('pause-screen').classList.add('hidden');
                 document.getElementById('menu-screen').classList.remove('hidden'); };
             quitBtn.addEventListener('click', quitHandler);
@@ -2641,7 +2799,7 @@
             const howtoHandler = (e) => {
                 if (e) e.preventDefault();
                 alert(
-                    'MOVE: WASD or Arrow Keys or D-pad\nAIM: Mouse or touch canvas\nFIRE: Click or hold fire button\nDASH: Space/Shift or ⚡ button\nSWAP WEAPON: Q or ⇄ button\nPAUSE: P key\nMUSIC: ♪ button or M key\n\nWeapons: Pistol (∞), Shotgun, Machine Gun, Railgun\nCollect power-ups: + Heal, R Rapid Fire, S Shield, A Ammo, D Bonus Score\n\nHEROES: 7 unique heroes! Select one in the menu.\nWhen you press PLAY, your chosen hero is loaded in-game\n(hero image, arena, enemies, music and the custom sound.mp3\n firing sound) from GitHub.\nYour selected hero\'s image will NOT appear as an enemy!\nCustomize colors with the color pickers!\n\nYour player name and selected hero name show in-game!'
+                    'MOVE: WASD or Arrow Keys or D-pad\nAIM: Mouse or touch canvas\nFIRE: Click or hold fire button\nDASH: Space/Shift or ⚡ button\nSWAP WEAPON: Q or ⇄ button\nPAUSE: P key\nMUSIC: ♪ button or M key — toggles mute on the background music\n\nWeapons: Pistol (∞), Shotgun, Machine Gun, Railgun\nCollect power-ups: + Heal, R Rapid Fire, S Shield, A Ammo, D Bonus Score\n\nHEROES: 7 unique heroes! Select one in the menu.\nWhen you press PLAY, your chosen hero is loaded in-game\n(hero image, arena, enemies, music and BOTH custom firing\n sounds — sound.mp3 for the player and opsSound.mp3 for enemies).\nYour selected hero\'s image will NOT appear as an enemy!\nCustomize colors with the color pickers!\n\nYour player name and selected hero name show in-game!'
                 );
             };
             howtoBtn.addEventListener('click', howtoHandler);
@@ -2649,7 +2807,7 @@
                 howtoHandler(e); });
 
             document.addEventListener('click', () => {
-                if (bgMusic && !musicPlaying && gameState === 'playing') tryAutoPlayMusic();
+                if (bgMusic && !musicPlaying && !musicMuted && gameState === 'playing') tryAutoPlayMusic();
             }, { once: true });
         }
 
@@ -2671,6 +2829,7 @@
 
             updateHUD();
             updateWeaponIndicator();
+            updateMusicUI();   // start with a consistent muted-icon state
 
             document.getElementById('loading-screen').classList.add('hidden');
             document.getElementById('menu-screen').classList.remove('hidden');
