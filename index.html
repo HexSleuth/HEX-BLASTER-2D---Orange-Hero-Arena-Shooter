@@ -1106,6 +1106,19 @@
         let isPlaying = false; // "In game with Play" state flag
 
         // ============================================================
+        //  CUSTOM FIRE SOUND (replaces old oscillator firing sound)
+        // ============================================================
+        // GitHub raw URL for the new firing sound.
+        // Original page: .../raw/refs/heads/main/sound.mp3
+        // We use the raw.githubusercontent.com host for direct, CORS-friendly
+        // binary delivery. This decoded AudioBuffer is played polyphonically
+        // on every shot, so rapid-fire weapons overlap cleanly.
+        const FIRE_SOUND_URL = 'https://raw.githubusercontent.com/HexSleuth/HEX-BLASTER-2D---Orange-Hero-Arena-Shooter/main/sound.mp3';
+        let fireSoundBuffer = null;      // decoded AudioBuffer
+        let fireSoundReady = false;      // true once decoded successfully
+        let fireSoundFailed = false;     // true if loading failed (use fallback)
+
+        // ============================================================
         //  ASSET CACHE + SELECTED-HERO LOADING SYSTEM
         // ============================================================
         const imageCache = {};          // imgKey -> HTMLImageElement (persistent across runs)
@@ -1153,6 +1166,106 @@
             });
         }
 
+        // Decode the custom fire sound into an AudioBuffer so it can be played
+        // multiple times at once (polyphonic) without cutting itself off.
+        function loadFireSoundAsset(url) {
+            return new Promise((resolve) => {
+                if (fireSoundBuffer) { fireSoundReady = true; resolve(fireSoundBuffer); return; }
+                if (fireSoundFailed) { resolve(null); return; }
+
+                // We need an AudioContext to decode. initAudio() is called
+                // before loading begins (user gesture from the Play click),
+                // so audioCtx should already exist.
+                const decode = (ctxToUse) => {
+                    fetch(url, { mode: 'cors', cache: 'force-cache' })
+                        .then(res => {
+                            if (!res.ok) throw new Error('HTTP ' + res.status);
+                            return res.arrayBuffer();
+                        })
+                        .then(buf => new Promise((res2, rej2) => {
+                            // decodeAudioData callback form for widest support
+                            ctxToUse.decodeAudioData(buf,
+                                (decoded) => res2(decoded),
+                                (err) => rej2(err)
+                            );
+                        }))
+                        .then(decoded => {
+                            fireSoundBuffer = decoded;
+                            fireSoundReady = true;
+                            resolve(decoded);
+                        })
+                        .catch(err => {
+                            console.warn('Fire sound load/decode failed:', err);
+                            fireSoundFailed = true;
+                            resolve(null);
+                        });
+                };
+
+                try {
+                    if (!audioCtx) {
+                        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume().catch(() => {});
+                    }
+                    decode(audioCtx);
+                } catch (e) {
+                    // Last-ditch: create a throwaway context for decoding
+                    try {
+                        const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        decode(tmpCtx);
+                    } catch (e2) {
+                        console.warn('No AudioContext available for fire sound:', e2);
+                        fireSoundFailed = true;
+                        resolve(null);
+                    }
+                }
+
+                // Never hang the loading screen
+                setTimeout(() => {
+                    if (!fireSoundReady && !fireSoundFailed) {
+                        fireSoundFailed = true;
+                        resolve(null);
+                    }
+                }, 15000);
+            });
+        }
+
+        // Play the decoded fire sound. Uses a fresh BufferSource each call so
+        // overlapping shots don't cancel each other. Returns true if played.
+        function playFireSound() {
+            if (!fireSoundReady || !fireSoundBuffer || !audioCtx) return false;
+            try {
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(() => {});
+                }
+                const src = audioCtx.createBufferSource();
+                src.buffer = fireSoundBuffer;
+
+                // Per-weapon volume shaping so the sound doesn't get fatiguing
+                let vol = 0.35;
+                if (currentWeapon === 'shotgun') vol = 0.55;
+                else if (currentWeapon === 'machinegun') vol = 0.22;
+                else if (currentWeapon === 'railgun') vol = 0.65;
+                else if (currentWeapon === 'pistol') vol = 0.35;
+
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+
+                // Slight random pitch variation keeps repeated shots from
+                // sounding robotic. playbackRate 1.0 = original pitch.
+                src.playbackRate.value = 0.94 + Math.random() * 0.12;
+
+                src.connect(gain);
+                gain.connect(audioCtx.destination);
+                src.start(0);
+                return true;
+            } catch (e) {
+                console.warn('playFireSound error:', e);
+                return false;
+            }
+        }
+
         // Build the enemy image list = all hero images EXCEPT the selected hero
         function getEnemySources(excludeHeroId) {
             const selected = heroPresets.find(h => h.id === excludeHeroId) || heroPresets[0];
@@ -1169,7 +1282,7 @@
             return list;
         }
 
-        // Load exactly what the run needs: selected hero + arena + enemies + music
+        // Load exactly what the run needs: selected hero + arena + enemies + music + fire sound
         function loadSelectedHeroBundle(heroId, onProgress) {
             const hero = heroPresets.find(h => h.id === heroId) || heroPresets[0];
             const enemySources = getEnemySources(heroId);
@@ -1181,7 +1294,7 @@
                 tasks.push({ key: src.imgKey, url: src.url, label: 'ENEMY ' + src.name });
             });
 
-            const totalSteps = tasks.length + 1; // + music
+            const totalSteps = tasks.length + 2; // + music + fire sound
             let doneSteps = 0;
 
             const step = (label) => {
@@ -1196,7 +1309,9 @@
 
             return chain
                 .then(() => loadMusicAsset(IMAGE_URLS.music))
-                .then(() => step('MUSIC'));
+                .then(() => step('MUSIC'))
+                .then(() => loadFireSoundAsset(FIRE_SOUND_URL))
+                .then(() => step('SOUND FX'));
         }
 
         // After loading, wire the loaded assets into game globals
@@ -1254,6 +1369,9 @@
 
             loadingStarted = true;
             const startedAt = Date.now();
+
+            // Make sure the AudioContext exists before we try to decode sound.mp3
+            initAudio();
 
             loadSelectedHeroBundle(selectedHeroId, (done, total, label) => {
                 const percent = Math.min(100, Math.floor((done / total) * 100));
@@ -1313,10 +1431,17 @@
                 o.stop(now + dur); };
             switch (type) {
                 case 'shoot':
-                    if (currentWeapon === 'pistol') osc(700, 0.06, 0.15);
-                    else if (currentWeapon === 'shotgun') osc(300, 0.1, 0.25);
-                    else if (currentWeapon === 'machinegun') osc(500, 0.04, 0.12);
-                    else if (currentWeapon === 'railgun') osc(1000, 0.15, 0.3);
+                    // ── NEW: use the custom sound.mp3 from GitHub ──
+                    // Falls back to the original synthesized blip ONLY if the
+                    // mp3 could not be loaded/decoded, so the game is never silent.
+                    if (playFireSound()) {
+                        // custom firing sound played successfully
+                    } else {
+                        if (currentWeapon === 'pistol') osc(700, 0.06, 0.15);
+                        else if (currentWeapon === 'shotgun') osc(300, 0.1, 0.25);
+                        else if (currentWeapon === 'machinegun') osc(500, 0.04, 0.12);
+                        else if (currentWeapon === 'railgun') osc(1000, 0.15, 0.3);
+                    }
                     break;
                 case 'enemy_shoot':
                     osc(350, 0.08, 0.15);
@@ -1460,7 +1585,6 @@
         // ============================================================
         //  GITHUB ASSET URLS (RAW)
         //  Repo: HexSleuth/HEX-BLASTER-2D---Orange-Hero-Arena-Shooter
-        //  Commit: 4089d142594e9b315bfba9542512506af15dc8cd
         // ============================================================
         const GH_BASE = 'https://raw.githubusercontent.com/HexSleuth/HEX-BLASTER-2D---Orange-Hero-Arena-Shooter/4089d142594e9b315bfba9542512506af15dc8cd/';
 
@@ -1484,7 +1608,7 @@
             enemy6: GH_BASE + 'heroOrange.png',
             enemy7: GH_BASE + 'heroGreen.png',
 
-            // --- Arena background (kept as animated GIF) ---
+            // --- Arena background (animated GIF) ---
             bg: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEj75kGeoHeDia6oJ2l0hZI_41uO-sSvnxLzKNoPFYficPl5NlVtZpsmarZpIqnuvAQL_QruDDyiSnLW6cexap-h23-FnlG5DYUExblleolFIJPeegm84ASbTdFZzLCDbGRODXrZAJ3pDGp9xCD9k_sraoZbgiGa9mH-_Z-IhRu_BxpEiYu5haXRl_siziyb/s1600/1000220557.gif',
 
             // --- Background music (GitHub raw MP3) ---
@@ -1641,6 +1765,7 @@
             player.x -= Math.cos(angle) * cfg.recoil * 2;
             player.y -= Math.sin(angle) * cfg.recoil * 2;
             shakeAmount = Math.min(shakeAmount + cfg.recoil * 0.5, 5);
+            // New custom fire sound (from sound.mp3) plays here
             playSound('shoot');
         }
 
@@ -2516,7 +2641,7 @@
             const howtoHandler = (e) => {
                 if (e) e.preventDefault();
                 alert(
-                    'MOVE: WASD or Arrow Keys or D-pad\nAIM: Mouse or touch canvas\nFIRE: Click or hold fire button\nDASH: Space/Shift or ⚡ button\nSWAP WEAPON: Q or ⇄ button\nPAUSE: P key\nMUSIC: ♪ button or M key\n\nWeapons: Pistol (∞), Shotgun, Machine Gun, Railgun\nCollect power-ups: + Heal, R Rapid Fire, S Shield, A Ammo, D Bonus Score\n\nHEROES: 7 unique heroes! Select one in the menu.\nWhen you press PLAY, your chosen hero is loaded in-game\n(hero image, arena, enemies and music) from GitHub.\nYour selected hero\'s image will NOT appear as an enemy!\nCustomize colors with the color pickers!\n\nYour player name and selected hero name show in-game!'
+                    'MOVE: WASD or Arrow Keys or D-pad\nAIM: Mouse or touch canvas\nFIRE: Click or hold fire button\nDASH: Space/Shift or ⚡ button\nSWAP WEAPON: Q or ⇄ button\nPAUSE: P key\nMUSIC: ♪ button or M key\n\nWeapons: Pistol (∞), Shotgun, Machine Gun, Railgun\nCollect power-ups: + Heal, R Rapid Fire, S Shield, A Ammo, D Bonus Score\n\nHEROES: 7 unique heroes! Select one in the menu.\nWhen you press PLAY, your chosen hero is loaded in-game\n(hero image, arena, enemies, music and the custom sound.mp3\n firing sound) from GitHub.\nYour selected hero\'s image will NOT appear as an enemy!\nCustomize colors with the color pickers!\n\nYour player name and selected hero name show in-game!'
                 );
             };
             howtoBtn.addEventListener('click', howtoHandler);
