@@ -566,6 +566,20 @@
             box-shadow: 0 0 20px rgba(255, 109, 0, 0.4);
             object-fit: cover;
         }
+        .loading-hero-preview {
+            width: 62px;
+            height: 62px;
+            border-radius: 50%;
+            border: 3px solid var(--primary);
+            box-shadow: 0 0 22px rgba(255, 109, 0, 0.7);
+            object-fit: cover;
+            background: rgba(0, 0, 0, 0.5);
+            animation: heroPulse 1.4s ease-in-out infinite;
+        }
+        @keyframes heroPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.06); }
+        }
         .progress-text {
             color: #ffd700;
             font-size: 0.85em;
@@ -848,6 +862,10 @@
                 width: 50px;
                 height: 50px;
             }
+            .loading-hero-preview {
+                width: 46px;
+                height: 46px;
+            }
             .hero-card {
                 min-width: 58px;
                 max-width: 68px;
@@ -947,8 +965,9 @@
 
         <div id="loading-screen" class="hidden">
             <div class="loading-content">
-                <div class="loading-title">HEX BLASTER 2D<small>— LOADING ARENA —</small></div>
+                <div class="loading-title">HEX BLASTER 2D<small id="loadingSubtitle">— LOADING ARENA —</small></div>
                 <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhum7eTeghX18nfQSYnqxnYKf-lOszGJ5jwCSzimnTPGszwAwov9gK1htGMefVDwKQH1srEH81ITf0tMMJhrFNNxEa8iUKeptftpl-extF-p80RD1YYGTveB9c2TCh4OVqisGg6KVQw0OezDPzfz71zDBw5IIQukQ87o0K1q6epss704oL3tSEcdGvb3GK_/s1600/1000220517.gif" class="progress-bar-gif" id="progressGif" alt="Loading Progress" onerror="this.style.display='none'; this.parentNode.querySelector('.loading-title').innerHTML='LOADING...';">
+                <img src="" class="loading-hero-preview" id="loadingHeroPreview" alt="Hero Preview" style="display:none;" onerror="this.style.display='none';">
                 <div class="progress-bar">
                     <div class="fill" id="progressFill"></div>
                 </div>
@@ -1083,121 +1102,192 @@
         let assetsLoaded = false;
         let heroImages = {};
         let loadingStarted = false;
+        let currentLoadingHeroId = null;
+        let isPlaying = false; // "In game with Play" state flag
 
-        let totalAssets = 0;
-        let loadedAssets = 0;
+        // ============================================================
+        //  ASSET CACHE + SELECTED-HERO LOADING SYSTEM
+        // ============================================================
+        const imageCache = {};          // imgKey -> HTMLImageElement (persistent across runs)
+        const failedAssets = new Set(); // imgKey of assets that failed
 
-        function updateProgress() {
-            loadedAssets++;
-            const percent = Math.min(100, Math.floor((loadedAssets / totalAssets) * 100));
-            document.getElementById('progressFill').style.width = percent + '%';
-            document.getElementById('progressText').textContent = percent + '%';
-            if (loadedAssets >= totalAssets && loadingStarted) {
-                setTimeout(() => {
-                    document.getElementById('loading-screen').classList.add('hidden');
-                }, 300);
-            }
-        }
-
-        function loadAsset(url, type) {
-            return new Promise((resolve, reject) => {
-                if (type === 'audio') {
-                    const audio = new Audio(url);
-                    audio.loop = true;
-                    audio.preload = 'auto';
-                    audio.addEventListener('canplaythrough', () => resolve(audio), { once: true });
-                    audio.addEventListener('error', (e) => reject(e), { once: true });
-                    audio.load();
-                } else {
-                    const img = new Image();
-                    img.crossOrigin = 'anonymous';
-                    img.onload = () => resolve(img);
-                    img.onerror = (e) => reject(e);
-                    img.src = url;
-                }
+        function loadImageAsset(key, url) {
+            return new Promise((resolve) => {
+                if (imageCache[key]) { resolve(imageCache[key]); return; }
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                let settled = false;
+                const finish = (result) => {
+                    if (settled) return;
+                    settled = true;
+                    if (result) imageCache[key] = result;
+                    else failedAssets.add(key);
+                    resolve(result || null);
+                };
+                img.onload = () => finish(img);
+                img.onerror = () => finish(null);
+                img.src = url;
+                // Safety timeout so the loader never hangs forever
+                setTimeout(() => finish(imageCache[key] || null), 15000);
             });
         }
 
-        const IMAGE_URLS = {
-            heroOrange: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiBGtkSeMPDxviFWdEIuXef4IUvDtL7CXiWjfs2YLX-ZDS-b-Iyj9ID-0tAPL6ZVIedGO6-B3q81T_WPeLUxhawLdPTjJRGGvuhmC_g0kugonhB4-g_QCU49sEBX98LkcwRmR7IjJCRZ8L6lfkxmfVPBucCJZn3YtuElM4oLda0UbWXxRUmqa73-0ykwN7o/s1600/1000220513.png',
-            heroBlue: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgOIWc_wbHMxxi_ZDbl4334AOzjiJZcyt5xWcTgV6cbLMUbASm1QkZPEcndg90hIvjdv_UUa7kO3plRgR10KK6gBFaS3jQfyyUMfXFl9mP8tafgMPUshfU28yFKKm0Q5jEbffWnME6sMqRWY_Qk5IV845IwToe8-XEb587ZCOu4vbRELDc2RkAO73T7HbWX/s1600/1000220509.png',
-            heroGreen: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjjfxv37C2SL9GFVtAV8x8OSL009nfTvHLgi18Is_oZOzJ4L-I5j1VUXA64cwJQtVVQ_RxdwcBesk7lKRhDsJ6HNS-wXmvIUs-xXcPUPCpHPDTRrRs9w0tY2C34a_JYX3B8w_cJ-LfQj71h6qyEVCJttAyEHk1M_mQ1jYUF5KKv0oFLzSEq14ptn1rD4Qoq/s1600/1000220595.png',
-            heroPurple: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgowXN_phfG4QGYYrM_zN2BpIRAFf46yUp3SKv3_wAaIW9y2KMSsl3V1BywxCyTIOi8o1oCWQxdL3AiXV7k9UKMi4G8SFVn2GvlWaTsyoeCDtfpkFmQ17BEf7uMTAQI2HPu0mzBnsTiPNoK-vQfnDgEcEtMEBkHLBUZSUTRce9dxs80dvbo5oqYkd5fWdCu/s1600/1000220512.png',
-            heroGold: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhRpfEh0sh8sBbAzpTS7fMIMVr7hRv8RVvpYR8FQdBauY-ZmwQtE1AsKGFkDLHBHcZDVhtaeFRwxNfCMnmS-QRFLpHIUpp2NQWx0jM3i-9UBjAL_0Q-pszBxp_CE-0uAsUFXnpeQEEOMekOjLd72GFMbvzgv8kK2gtBZbqf23J4rFrV7duUZG7ZfYdoCpTA/s1600/1000220511.png',
-            heroRed: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEigqVaEJOE9p95B4rQYvzh6csGV0qXVPuVJkDinYVczr3x8ZhOyZ03zD4Ccl3pRx0u1TTvz8abjsoRYp21t06Ru5J3d2w6fyP5ya1UCNLDLPgmSCepBj6YzvjbGxSH7KkEjrP5LkFgfuz6xtoeybWGbLsPcbVJHttH-s174DIxIsRrMOjxDdEG7iza3gzc_/s1600/1000220510.png',
-            heroCyan: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEicIAliPZ5bRmPkU0QS69IrbzstYQMcq-vgcY9RXYax19gOf2hIfe_H_ups3J9lVBBxAU9aIHAu7Wned-tRp35gt_F5OI9W_U6OB3JF5M_gAXDwb07MP7RKkmydOBN9S0UxQwPxtgxGpzmK73pAC59jT3i9MTUjyc-BnO9F0OzegCiPneS6PXSCNqu3E7hU/s1600/1000220547.png',
-            enemy1: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgOIWc_wbHMxxi_ZDbl4334AOzjiJZcyt5xWcTgV6cbLMUbASm1QkZPEcndg90hIvjdv_UUa7kO3plRgR10KK6gBFaS3jQfyyUMfXFl9mP8tafgMPUshfU28yFKKm0Q5jEbffWnME6sMqRWY_Qk5IV845IwToe8-XEb587ZCOu4vbRELDc2RkAO73T7HbWX/s1600/1000220509.png',
-            enemy2: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEicIAliPZ5bRmPkU0QS69IrbzstYQMcq-vgcY9RXYax19gOf2hIfe_H_ups3J9lVBBxAU9aIHAu7Wned-tRp35gt_F5OI9W_U6OB3JF5M_gAXDwb07MP7RKkmydOBN9S0UxQwPxtgxGpzmK73pAC59jT3i9MTUjyc-BnO9F0OzegCiPneS6PXSCNqu3E7hU/s1600/1000220547.png',
-            enemy3: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgowXN_phfG4QGYYrM_zN2BpIRAFf46yUp3SKv3_wAaIW9y2KMSsl3V1BywxCyTIOi8o1oCWQxdL3AiXV7k9UKMi4G8SFVn2GvlWaTsyoeCDtfpkFmQ17BEf7uMTAQI2HPu0mzBnsTiPNoK-vQfnDgEcEtMEBkHLBUZSUTRce9dxs80dvbo5oqYkd5fWdCu/s1600/1000220512.png',
-            enemy4: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhRpfEh0sh8sBbAzpTS7fMIMVr7hRv8RVvpYR8FQdBauY-ZmwQtE1AsKGFkDLHBHcZDVhtaeFRwxNfCMnmS-QRFLpHIUpp2NQWx0jM3i-9UBjAL_0Q-pszBxp_CE-0uAsUFXnpeQEEOMekOjLd72GFMbvzgv8kK2gtBZbqf23J4rFrV7duUZG7ZfYdoCpTA/s1600/1000220511.png',
-            enemy5: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEigqVaEJOE9p95B4rQYvzh6csGV0qXVPuVJkDinYVczr3x8ZhOyZ03zD4Ccl3pRx0u1TTvz8abjsoRYp21t06Ru5J3d2w6fyP5ya1UCNLDLPgmSCepBj6YzvjbGxSH7KkEjrP5LkFgfuz6xtoeybWGbLsPcbVJHttH-s174DIxIsRrMOjxDdEG7iza3gzc_/s1600/1000220510.png',
-            enemy6: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgOIWc_wbHMxxi_ZDbl4334AOzjiJZcyt5xWcTgV6cbLMUbASm1QkZPEcndg90hIvjdv_UUa7kO3plRgR10KK6gBFaS3jQfyyUMfXFl9mP8tafgMPUshfU28yFKKm0Q5jEbffWnME6sMqRWY_Qk5IV845IwToe8-XEb587ZCOu4vbRELDc2RkAO73T7HbWX/s1600/1000220509.png',
-            enemy7: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjjfxv37C2SL9GFVtAV8x8OSL009nfTvHLgi18Is_oZOzJ4L-I5j1VUXA64cwJQtVVQ_RxdwcBesk7lKRhDsJ6HNS-wXmvIUs-xXcPUPCpHPDTRrRs9w0tY2C34a_JYX3B8w_cJ-LfQj71h6qyEVCJttAyEHk1M_mQ1jYUF5KKv0oFLzSEq14ptn1rD4Qoq/s1600/1000220595.png',
-            bg: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEj75kGeoHeDia6oJ2l0hZI_41uO-sSvnxLzKNoPFYficPl5NlVtZpsmarZpIqnuvAQL_QruDDyiSnLW6cexap-h23-FnlG5DYUExblleolFIJPeegm84ASbTdFZzLCDbGRODXrZAJ3pDGp9xCD9k_sraoZbgiGa9mH-_Z-IhRu_BxpEiYu5haXRl_siziyb/s1600/1000220557.gif',
-            music: 'https://raw.githubusercontent.com/HexSleuth/Hero-vs-Enemies/188d90a1344bc2d1357b27e0600b2538b0e53fd2/background_music.mp3'
-        };
-
-        // 7 hero presets — all 7 images available as both player and enemy (except selected player)
-        const heroPresets = [
-            { id: 'orange', name: 'ORANGE', icon: '🔥', primary: '#ff6d00', glow: '#ff6d00', bullet: '#ff6d00',
-                accent: '#ffd700', speed: 2.8, damageMult: 1.0, maxHpBonus: 0, desc: 'BALANCED',
-                imgKey: 'heroOrange' },
-            { id: 'blue', name: 'BLUE', icon: '💧', primary: '#2196f3', glow: '#00e5ff', bullet: '#40c4ff',
-                accent: '#80d8ff', speed: 3.2, damageMult: 0.9, maxHpBonus: 0, desc: 'FAST', imgKey: 'heroBlue' },
-            { id: 'green', name: 'GREEN', icon: '🌿', primary: '#4caf50', glow: '#69f0ae', bullet: '#b9f6ca',
-                accent: '#a5d6a7', speed: 2.6, damageMult: 1.0, maxHpBonus: 20, desc: 'TANKY',
-                imgKey: 'heroGreen' },
-            { id: 'purple', name: 'PURPLE', icon: '🔮', primary: '#9c27b0', glow: '#e040fb', bullet: '#ce93d8',
-                accent: '#ea80fc', speed: 2.7, damageMult: 1.2, maxHpBonus: 0, desc: 'POWER',
-                imgKey: 'heroPurple' },
-            { id: 'gold', name: 'GOLD', icon: '⭐', primary: '#ffd700', glow: '#ffee58', bullet: '#fff176',
-                accent: '#ffca28', speed: 2.5, damageMult: 1.0, maxHpBonus: 10, desc: 'DEFENDER',
-                imgKey: 'heroGold' },
-            { id: 'red', name: 'RED', icon: '💀', primary: '#ff1744', glow: '#ff5252', bullet: '#ff8a80',
-                accent: '#ff6e40', speed: 2.9, damageMult: 1.1, maxHpBonus: 0, desc: 'AGGRESSOR',
-                imgKey: 'heroRed' },
-            { id: 'cyan', name: 'CYAN', icon: '❄️', primary: '#00bcd4', glow: '#18ffff', bullet: '#84ffff',
-                accent: '#4dd0e1', speed: 2.75, damageMult: 1.0, maxHpBonus: 5, desc: 'SWIFT', imgKey: 'heroCyan' }
-        ];
-
-        let selectedHeroId = 'orange';
-        let lastSelectedHeroId = 'orange';
-        let heroColors = {
-            primary: '#ff6d00',
-            glow: '#ff6d00',
-            bullet: '#ff6d00',
-            accent: '#ffd700'
-        };
-        let playerName = '';
-
-        function tryAutoPlayMusic() {
-            if (bgMusic && !musicPlaying && gameState === 'playing') {
-                bgMusic.play().then(() => {
-                    musicPlaying = true;
-                    document.getElementById('music-indicator').innerHTML =
-                        '<i class="fa-solid fa-volume-high"></i> ON';
-                }).catch(e => {
-                    console.log('Autoplay blocked, waiting for user gesture');
-                    document.getElementById('music-indicator').innerHTML =
-                        '<i class="fa-solid fa-volume-xmark"></i> OFF';
-                });
-            }
+        function loadMusicAsset(url) {
+            return new Promise((resolve) => {
+                if (bgMusic) { musicLoaded = true; resolve(bgMusic); return; }
+                const audio = new Audio();
+                audio.loop = true;
+                audio.preload = 'auto';
+                let settled = false;
+                const finish = (ok) => {
+                    if (settled) return;
+                    settled = true;
+                    if (ok) { bgMusic = audio; musicLoaded = true; resolve(audio); }
+                    else { musicLoaded = false; resolve(null); }
+                };
+                audio.addEventListener('canplaythrough', () => finish(true), { once: true });
+                audio.addEventListener('error', () => finish(false), { once: true });
+                audio.src = url;
+                try { audio.load(); } catch (e) { finish(false); }
+                setTimeout(() => finish(true), 12000);
+            });
         }
 
-        const weaponConfigs = {
-            pistol: { damage: 1, fireRate: 12, bulletSpeed: 7, spread: 0.02, count: 1, ammo: Infinity,
-                bulletColor: '#ff6d00', bulletRadius: 3, recoil: 0.5 },
-            shotgun: { damage: 0.8, fireRate: 40, bulletSpeed: 6, spread: 0.25, count: 5, ammo: 50,
-                bulletColor: '#ff6d00', bulletRadius: 2.5, recoil: 2 },
-            machinegun: { damage: 0.5, fireRate: 4, bulletSpeed: 8, spread: 0.06, count: 1, ammo: 200,
-                bulletColor: '#ffb347', bulletRadius: 2, recoil: 0.3 },
-            railgun: { damage: 5, fireRate: 60, bulletSpeed: 16, spread: 0, count: 1, ammo: 20,
-                bulletColor: '#ff4d00', bulletRadius: 5, recoil: 4 }
-        };
-        let currentWeapon = 'pistol';
+        // Build the enemy image list = all hero images EXCEPT the selected hero
+        function getEnemySources(excludeHeroId) {
+            const selected = heroPresets.find(h => h.id === excludeHeroId) || heroPresets[0];
+            const excludeUrl = IMAGE_URLS[selected.imgKey];
+            const list = [];
+            const seen = new Set();
+            heroPresets.forEach(h => {
+                const url = IMAGE_URLS[h.imgKey];
+                if (url === excludeUrl) return;
+                if (seen.has(url)) return;
+                seen.add(url);
+                list.push({ imgKey: h.imgKey, url: url, name: h.name });
+            });
+            return list;
+        }
 
-        const keys = {},
-            touchKeys = {};
+        // Load exactly what the run needs: selected hero + arena + enemies + music
+        function loadSelectedHeroBundle(heroId, onProgress) {
+            const hero = heroPresets.find(h => h.id === heroId) || heroPresets[0];
+            const enemySources = getEnemySources(heroId);
+
+            const tasks = [];
+            tasks.push({ key: hero.imgKey, url: IMAGE_URLS[hero.imgKey], label: 'HERO ' + hero.name });
+            tasks.push({ key: 'bg', url: IMAGE_URLS.bg, label: 'ARENA' });
+            enemySources.forEach(src => {
+                tasks.push({ key: src.imgKey, url: src.url, label: 'ENEMY ' + src.name });
+            });
+
+            const totalSteps = tasks.length + 1; // + music
+            let doneSteps = 0;
+
+            const step = (label) => {
+                doneSteps++;
+                if (typeof onProgress === 'function') onProgress(doneSteps, totalSteps, label);
+            };
+
+            let chain = Promise.resolve();
+            tasks.forEach(t => {
+                chain = chain.then(() => loadImageAsset(t.key, t.url).then(() => step(t.label)));
+            });
+
+            return chain
+                .then(() => loadMusicAsset(IMAGE_URLS.music))
+                .then(() => step('MUSIC'));
+        }
+
+        // After loading, wire the loaded assets into game globals
+        function applyLoadedAssets(heroId) {
+            const hero = heroPresets.find(h => h.id === heroId) || heroPresets[0];
+
+            heroImg = imageCache[hero.imgKey] || null;
+            heroLoaded = !!heroImg;
+
+            bgImg = imageCache['bg'] || null;
+            bgLoaded = !!bgImg;
+
+            heroImages = {};
+            heroPresets.forEach(h => {
+                if (imageCache[h.imgKey]) heroImages[h.imgKey] = imageCache[h.imgKey];
+            });
+
+            enemyImgs = [];
+            getEnemySources(heroId).forEach(src => {
+                const img = imageCache[src.imgKey];
+                if (img) {
+                    enemyImgs.push({ img: img, url: src.url, key: src.imgKey, name: src.name });
+                }
+            });
+            enemyLoaded = enemyImgs.length > 0;
+
+            currentLoadingHeroId = heroId;
+            assetsLoaded = true;
+        }
+
+        // ============================================================
+        //  LOADING SCREEN -> PLAY
+        // ============================================================
+        function beginLoadingAndStart() {
+            const hero = heroPresets.find(h => h.id === selectedHeroId) || heroPresets[0];
+
+            document.getElementById('menu-screen').classList.add('hidden');
+            document.getElementById('game-over-screen').classList.add('hidden');
+            document.getElementById('pause-screen').classList.add('hidden');
+            document.getElementById('loading-screen').classList.remove('hidden');
+
+            const fillEl = document.getElementById('progressFill');
+            const textEl = document.getElementById('progressText');
+            const subEl = document.getElementById('loadingSubtitle');
+            const previewEl = document.getElementById('loadingHeroPreview');
+
+            fillEl.style.width = '0%';
+            textEl.textContent = '0%';
+            subEl.textContent = 'LOADING HERO: ' + hero.name;
+
+            previewEl.style.display = '';
+            previewEl.style.borderColor = hero.glow;
+            previewEl.style.boxShadow = '0 0 22px ' + hero.glow + 'cc';
+            previewEl.src = IMAGE_URLS[hero.imgKey];
+
+            loadingStarted = true;
+            const startedAt = Date.now();
+
+            loadSelectedHeroBundle(selectedHeroId, (done, total, label) => {
+                const percent = Math.min(100, Math.floor((done / total) * 100));
+                fillEl.style.width = percent + '%';
+                textEl.textContent = percent + '%';
+                if (label && percent < 100) {
+                    subEl.textContent = 'LOADING ' + label + '...';
+                }
+            }).then(() => {
+                applyLoadedAssets(selectedHeroId);
+
+                const elapsed = Date.now() - startedAt;
+                const wait = Math.max(0, 500 - elapsed);
+
+                setTimeout(() => {
+                    fillEl.style.width = '100%';
+                    textEl.textContent = '100%';
+                    subEl.textContent = 'HERO ' + hero.name + ' READY!';
+                    setTimeout(() => {
+                        document.getElementById('loading-screen').classList.add('hidden');
+                        startGame();
+                    }, 200);
+                }, wait);
+            }).catch(() => {
+                // Fail-safe: never block the player
+                applyLoadedAssets(selectedHeroId);
+                document.getElementById('loading-screen').classList.add('hidden');
+                startGame();
+            });
+        }
+
+        // ============================================================
+        //  AUDIO
+        // ============================================================
         let audioCtx = null;
 
         function initAudio() {
@@ -1265,6 +1355,20 @@
             }
         }
 
+        function tryAutoPlayMusic() {
+            if (bgMusic && !musicPlaying && gameState === 'playing') {
+                bgMusic.play().then(() => {
+                    musicPlaying = true;
+                    document.getElementById('music-indicator').innerHTML =
+                        '<i class="fa-solid fa-volume-high"></i> ON';
+                }).catch(e => {
+                    console.log('Autoplay blocked, waiting for user gesture');
+                    document.getElementById('music-indicator').innerHTML =
+                        '<i class="fa-solid fa-volume-xmark"></i> OFF';
+                });
+            }
+        }
+
         function toggleMusic() {
             if (!bgMusic) return;
             if (musicPlaying) {
@@ -1281,6 +1385,9 @@
             }
         }
 
+        // ============================================================
+        //  PARTICLES / TEXT / POWERUPS
+        // ============================================================
         function spawnParticles(x, y, color, count = 8, speed = 2) {
             for (let i = 0; i < count; i++) {
                 const angle = Math.random() * Math.PI * 2;
@@ -1350,17 +1457,97 @@
             playSound('powerup');
         }
 
-        // KEY FIX: Get enemy image EXCLUDING the selected player hero's image
-        function getEnemyImage() {
-            const selectedHero = heroPresets.find(h => h.id === lastSelectedHeroId);
-            const heroImgKey = selectedHero ? selectedHero.imgKey : 'heroOrange';
-            const heroImgSrc = IMAGE_URLS[heroImgKey];
+        // ============================================================
+        //  GITHUB ASSET URLS (RAW)
+        //  Repo: HexSleuth/HEX-BLASTER-2D---Orange-Hero-Arena-Shooter
+        //  Commit: 4089d142594e9b315bfba9542512506af15dc8cd
+        // ============================================================
+        const GH_BASE = 'https://raw.githubusercontent.com/HexSleuth/HEX-BLASTER-2D---Orange-Hero-Arena-Shooter/4089d142594e9b315bfba9542512506af15dc8cd/';
 
-            let candidates = enemyImgs.filter(e => e.url !== heroImgSrc);
-            if (candidates.length === 0) {
-                candidates = enemyImgs;
-            }
-            return candidates[Math.floor(Math.random() * candidates.length)]?.img || null;
+        const IMAGE_URLS = {
+            // --- Player hero sprites ---
+            heroOrange: GH_BASE + 'heroOrange.png',
+            heroBlue:   GH_BASE + 'heroBlue.png',
+            heroGreen:  GH_BASE + 'heroGreen.png',
+            heroRed:    GH_BASE + 'heroRed.png',
+            heroGold:   GH_BASE + 'heroGold.png',
+            heroCyan:   GH_BASE + 'heroCyan.png',
+            // 7th image (obs_1.png) is used for the PURPLE hero slot
+            heroPurple: GH_BASE + 'obs_1.png',
+
+            // --- Enemy sprites (same image pool; selected hero is excluded at runtime) ---
+            enemy1: GH_BASE + 'heroBlue.png',
+            enemy2: GH_BASE + 'heroCyan.png',
+            enemy3: GH_BASE + 'obs_1.png',
+            enemy4: GH_BASE + 'heroGold.png',
+            enemy5: GH_BASE + 'heroRed.png',
+            enemy6: GH_BASE + 'heroOrange.png',
+            enemy7: GH_BASE + 'heroGreen.png',
+
+            // --- Arena background (kept as animated GIF) ---
+            bg: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEj75kGeoHeDia6oJ2l0hZI_41uO-sSvnxLzKNoPFYficPl5NlVtZpsmarZpIqnuvAQL_QruDDyiSnLW6cexap-h23-FnlG5DYUExblleolFIJPeegm84ASbTdFZzLCDbGRODXrZAJ3pDGp9xCD9k_sraoZbgiGa9mH-_Z-IhRu_BxpEiYu5haXRl_siziyb/s1600/1000220557.gif',
+
+            // --- Background music (GitHub raw MP3) ---
+            music: GH_BASE + 'background_music.mp3'
+        };
+
+        // ============================================================
+        //  HERO PRESETS
+        // ============================================================
+        const heroPresets = [
+            { id: 'orange', name: 'ORANGE', icon: '🔥', primary: '#ff6d00', glow: '#ff6d00', bullet: '#ff6d00',
+                accent: '#ffd700', speed: 2.8, damageMult: 1.0, maxHpBonus: 0, desc: 'BALANCED',
+                imgKey: 'heroOrange' },
+            { id: 'blue', name: 'BLUE', icon: '💧', primary: '#2196f3', glow: '#00e5ff', bullet: '#40c4ff',
+                accent: '#80d8ff', speed: 3.2, damageMult: 0.9, maxHpBonus: 0, desc: 'FAST', imgKey: 'heroBlue' },
+            { id: 'green', name: 'GREEN', icon: '🌿', primary: '#4caf50', glow: '#69f0ae', bullet: '#b9f6ca',
+                accent: '#a5d6a7', speed: 2.6, damageMult: 1.0, maxHpBonus: 20, desc: 'TANKY',
+                imgKey: 'heroGreen' },
+            { id: 'purple', name: 'PURPLE', icon: '🔮', primary: '#9c27b0', glow: '#e040fb', bullet: '#ce93d8',
+                accent: '#ea80fc', speed: 2.7, damageMult: 1.2, maxHpBonus: 0, desc: 'POWER',
+                imgKey: 'heroPurple' },
+            { id: 'gold', name: 'GOLD', icon: '⭐', primary: '#ffd700', glow: '#ffee58', bullet: '#fff176',
+                accent: '#ffca28', speed: 2.5, damageMult: 1.0, maxHpBonus: 10, desc: 'DEFENDER',
+                imgKey: 'heroGold' },
+            { id: 'red', name: 'RED', icon: '💀', primary: '#ff1744', glow: '#ff5252', bullet: '#ff8a80',
+                accent: '#ff6e40', speed: 2.9, damageMult: 1.1, maxHpBonus: 0, desc: 'AGGRESSOR',
+                imgKey: 'heroRed' },
+            { id: 'cyan', name: 'CYAN', icon: '❄️', primary: '#00bcd4', glow: '#18ffff', bullet: '#84ffff',
+                accent: '#4dd0e1', speed: 2.75, damageMult: 1.0, maxHpBonus: 5, desc: 'SWIFT', imgKey: 'heroCyan' }
+        ];
+
+        let selectedHeroId = 'orange';
+        let lastSelectedHeroId = 'orange';
+        let heroColors = {
+            primary: '#ff6d00',
+            glow: '#ff6d00',
+            bullet: '#ff6d00',
+            accent: '#ffd700'
+        };
+        let playerName = '';
+
+        const weaponConfigs = {
+            pistol: { damage: 1, fireRate: 12, bulletSpeed: 7, spread: 0.02, count: 1, ammo: Infinity,
+                bulletColor: '#ff6d00', bulletRadius: 3, recoil: 0.5 },
+            shotgun: { damage: 0.8, fireRate: 40, bulletSpeed: 6, spread: 0.25, count: 5, ammo: 50,
+                bulletColor: '#ff6d00', bulletRadius: 2.5, recoil: 2 },
+            machinegun: { damage: 0.5, fireRate: 4, bulletSpeed: 8, spread: 0.06, count: 1, ammo: 200,
+                bulletColor: '#ffb347', bulletRadius: 2, recoil: 0.3 },
+            railgun: { damage: 5, fireRate: 60, bulletSpeed: 16, spread: 0, count: 1, ammo: 20,
+                bulletColor: '#ff4d00', bulletRadius: 5, recoil: 4 }
+        };
+        let currentWeapon = 'pistol';
+
+        const keys = {},
+            touchKeys = {};
+
+        // ============================================================
+        //  ENEMIES
+        // ============================================================
+        // enemyImgs is rebuilt on every load and already excludes the selected hero
+        function getEnemyImage() {
+            if (!enemyImgs || enemyImgs.length === 0) return null;
+            return enemyImgs[Math.floor(Math.random() * enemyImgs.length)].img || null;
         }
 
         function spawnEnemy() {
@@ -1413,10 +1600,14 @@
             });
         }
 
+        // ============================================================
+        //  SHOOTING
+        // ============================================================
         function firePlayerBullet() {
             if (player.fireCooldown > 0) return;
             if (weaponConfigs[currentWeapon].ammo <= 0) {
                 currentWeapon = 'pistol';
+                weaponIndex = 0;
                 updateWeaponIndicator();
                 return;
             }
@@ -1471,8 +1662,12 @@
             playSound('enemy_shoot');
         }
 
+        // ============================================================
+        //  GAME FLOW
+        // ============================================================
         function startGame() {
             gameState = 'playing';
+            isPlaying = true;
             score = 0;
             wave = 1;
             kills = 0;
@@ -1489,6 +1684,13 @@
             weaponConfigs.shotgun.ammo = 50;
             weaponConfigs.machinegun.ammo = 200;
             weaponConfigs.railgun.ammo = 20;
+
+            // Apply the selected hero's tuned stats
+            const hero = heroPresets.find(h => h.id === selectedHeroId) || heroPresets[0];
+            player.speed = hero.speed;
+            maxHealth = 100 + hero.maxHpBonus;
+            health = maxHealth;
+
             player.x = canvas.width / 2;
             player.y = canvas.height / 2;
             player.vx = 0;
@@ -1528,6 +1730,7 @@
 
         function gameOver() {
             gameState = 'gameover';
+            isPlaying = false;
             playSound('gameover');
             const displayName = playerName || 'PLAYER';
             const heroDisplayName = (heroPresets.find(h => h.id === lastSelectedHeroId) || heroPresets[0]).name;
@@ -1605,6 +1808,9 @@
             updateHUD();
         }
 
+        // ============================================================
+        //  UPDATE
+        // ============================================================
         function update() {
             if (gameState !== 'playing') return;
             time++;
@@ -1793,6 +1999,9 @@
             if (shakeAmount > 0) { shakeAmount *= 0.9; if (shakeAmount < 0.1) shakeAmount = 0; }
         }
 
+        // ============================================================
+        //  RENDER
+        // ============================================================
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             if (bgLoaded && bgImg) ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
@@ -2048,6 +2257,9 @@
             requestAnimationFrame(gameLoop);
         }
 
+        // ============================================================
+        //  MENU / HERO SELECTION
+        // ============================================================
         function initHeroSelection() {
             const listEl = document.getElementById('player-list');
             listEl.innerHTML = '';
@@ -2088,6 +2300,12 @@
                 document.getElementById('color-glow').value = hero.glow;
                 document.getElementById('color-bullet').value = hero.bullet;
                 document.getElementById('color-accent').value = hero.accent;
+
+                // Keep live bullet colors in sync with the newly chosen hero
+                weaponConfigs.pistol.bulletColor = heroColors.bullet;
+                weaponConfigs.shotgun.bulletColor = heroColors.bullet;
+                weaponConfigs.machinegun.bulletColor = heroColors.bullet;
+                weaponConfigs.railgun.bulletColor = heroColors.bullet;
             }
             updateHeroSelectionUI();
             updateHUD();
@@ -2137,6 +2355,9 @@
             });
         }
 
+        // ============================================================
+        //  INPUT
+        // ============================================================
         function setupInput() {
             window.addEventListener('keydown', (e) => {
                 keys[e.key.toLowerCase()] = true;
@@ -2224,106 +2445,78 @@
                 musicBtn.addEventListener('mousedown', musicHandler);
             }
 
+            // ---------- START GAME (Selected Hero Loading -> Play) ----------
             const startBtn = document.getElementById('btn-start');
             let startLock = false;
             const startHandler = (e) => {
                 if (e) e.preventDefault();
                 if (startLock) return;
                 startLock = true;
-                setTimeout(() => { startLock = false; }, 300);
+                setTimeout(() => { startLock = false; }, 400);
+
                 initAudio();
+
                 const nameInput = document.getElementById('player-name-input');
                 playerName = nameInput.value.trim().toUpperCase();
                 nameInput.value = playerName;
+
+                // Bullet colors always follow the customizer / selected hero
                 weaponConfigs.pistol.bulletColor = heroColors.bullet;
                 weaponConfigs.shotgun.bulletColor = heroColors.bullet;
                 weaponConfigs.machinegun.bulletColor = heroColors.bullet;
                 weaponConfigs.railgun.bulletColor = heroColors.bullet;
 
-                if (!assetsLoaded) {
-                    loadingStarted = true;
-                    document.getElementById('menu-screen').classList.add('hidden');
-                    document.getElementById('loading-screen').classList.remove('hidden');
-                    document.getElementById('progressFill').style.width = '0%';
-                    document.getElementById('progressText').textContent = '0%';
-                    loadedAssets = 0;
-                    totalAssets = Object.keys(IMAGE_URLS).length;
-
-                    const assetList = Object.entries(IMAGE_URLS).map(([key, url]) => ({ key, url }));
-                    const imageAssets = assetList.filter(a => a.key !== 'music');
-                    const audioAsset = assetList.find(a => a.key === 'music');
-
-                    Promise.all(imageAssets.map(asset => loadAsset(asset.url, asset.key).then(img => {
-                        if (asset.key === 'bg') { bgImg = img;
-                            bgLoaded = true; } else if (asset.key.startsWith('hero')) {
-                            heroImages[asset.key] = img; } else if (asset.key.startsWith('enemy')) {
-                            enemyImgs.push({ img: img, url: asset.url, key: asset.key });
-                            enemyLoaded = true;
-                        }
-                        updateProgress();
-                    }).catch(() => { updateProgress(); })))
-                        .then(() => {
-                            return loadAsset(audioAsset.url, 'audio').then(audio => {
-                                bgMusic = audio;
-                                musicLoaded = true;
-                                updateProgress();
-                            }).catch(() => { updateProgress(); });
-                        }).then(() => {
-                            heroLoaded = Object.keys(heroImages).length > 0;
-                            const selectedHeroPreset = heroPresets.find(h => h.id === lastSelectedHeroId);
-                            const heroImgKey = selectedHeroPreset ? selectedHeroPreset.imgKey : 'heroOrange';
-                            heroImg = heroImages[heroImgKey] || heroImages['heroOrange'] || null;
-                            assetsLoaded = true;
-                            document.getElementById('loading-screen').classList.add('hidden');
-                            startGame();
-                        }).catch(() => {
-                            assetsLoaded = true;
-                            document.getElementById('loading-screen').classList.add('hidden');
-                            startGame();
-                        });
-                } else {
-                    document.getElementById('loading-screen').classList.add('hidden');
-                    startGame();
-                }
+                // Always run the selected-hero loading pass before playing
+                beginLoadingAndStart();
             };
             startBtn.addEventListener('click', startHandler);
             startBtn.addEventListener('touchend', (e) => { e.preventDefault();
                 startHandler(e); });
 
             const restartBtn = document.getElementById('btn-restart');
-            const restartHandler = (e) => { if (e) e.preventDefault();
+            const restartHandler = (e) => {
+                if (e) e.preventDefault();
                 initAudio();
-                startGame(); };
+                // Reuse cached hero assets, but still run through the loading
+                // screen so "Play" always follows a hero load.
+                beginLoadingAndStart();
+            };
             restartBtn.addEventListener('click', restartHandler);
             restartBtn.addEventListener('touchend', (e) => { e.preventDefault();
                 restartHandler(e); });
+
             const menuBtn = document.getElementById('btn-menu');
             const menuHandler = (e) => { if (e) e.preventDefault();
                 gameState = 'menu';
+                isPlaying = false;
                 document.getElementById('game-over-screen').classList.add('hidden');
                 document.getElementById('menu-screen').classList.remove('hidden'); };
             menuBtn.addEventListener('click', menuHandler);
             menuBtn.addEventListener('touchend', (e) => { e.preventDefault();
                 menuHandler(e); });
+
             const resumeBtn = document.getElementById('btn-resume');
             const resumeHandler = (e) => { if (e) e.preventDefault();
                 togglePause(); };
             resumeBtn.addEventListener('click', resumeHandler);
             resumeBtn.addEventListener('touchend', (e) => { e.preventDefault();
                 resumeHandler(e); });
+
             const quitBtn = document.getElementById('btn-quit');
             const quitHandler = (e) => { if (e) e.preventDefault();
                 gameState = 'menu';
+                isPlaying = false;
                 document.getElementById('pause-screen').classList.add('hidden');
                 document.getElementById('menu-screen').classList.remove('hidden'); };
             quitBtn.addEventListener('click', quitHandler);
             quitBtn.addEventListener('touchend', (e) => { e.preventDefault();
                 quitHandler(e); });
+
             const howtoBtn = document.getElementById('btn-howto');
             const howtoHandler = (e) => {
                 if (e) e.preventDefault();
                 alert(
-                    'MOVE: WASD or Arrow Keys or D-pad\nAIM: Mouse or touch canvas\nFIRE: Click or hold fire button\nDASH: Space/Shift or ⚡ button\nSWAP WEAPON: Q or ⇄ button\nPAUSE: P key\nMUSIC: ♪ button or M key\n\nWeapons: Pistol (∞), Shotgun, Machine Gun, Railgun\nCollect power-ups: + Heal, R Rapid Fire, S Shield, A Ammo, D Bonus Score\n\nHEROES: 7 unique heroes! Select one in the menu.\nYour selected hero\'s image will NOT appear as an enemy!\nCustomize colors with the color pickers!\n\nYour player name and selected hero name show in-game!'
+                    'MOVE: WASD or Arrow Keys or D-pad\nAIM: Mouse or touch canvas\nFIRE: Click or hold fire button\nDASH: Space/Shift or ⚡ button\nSWAP WEAPON: Q or ⇄ button\nPAUSE: P key\nMUSIC: ♪ button or M key\n\nWeapons: Pistol (∞), Shotgun, Machine Gun, Railgun\nCollect power-ups: + Heal, R Rapid Fire, S Shield, A Ammo, D Bonus Score\n\nHEROES: 7 unique heroes! Select one in the menu.\nWhen you press PLAY, your chosen hero is loaded in-game\n(hero image, arena, enemies and music) from GitHub.\nYour selected hero\'s image will NOT appear as an enemy!\nCustomize colors with the color pickers!\n\nYour player name and selected hero name show in-game!'
                 );
             };
             howtoBtn.addEventListener('click', howtoHandler);
@@ -2335,6 +2528,9 @@
             }, { once: true });
         }
 
+        // ============================================================
+        //  INIT
+        // ============================================================
         function init() {
             initHeroSelection();
             initColorPickers();
